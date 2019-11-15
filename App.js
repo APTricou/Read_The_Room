@@ -6,6 +6,8 @@ import { Platform, StatusBar, StyleSheet, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import store from "./store";
 import { Provider } from "react-redux";
+import { AuthSession } from "expo";
+require("./spotifyIntegration/index");
 
 import AppNavigator from "./navigation/AppNavigator";
 

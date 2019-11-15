@@ -5,12 +5,12 @@ const CLEAR_PLAYLIST = "CLEAR_PLAYLIST";
 
 // ACTION CREATORS
 
-export const setUser = user => ({
+export const setPlaylist = user => ({
   type: SET_PLAYLIST,
   user
 });
 
-export const clearUser = () => ({
+export const clearPlaylist = () => ({
   type: CLEAR_PLAYLIST
 });
 

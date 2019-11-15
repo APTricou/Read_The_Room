@@ -5,12 +5,12 @@ const CLEAR_ROOM = "CLEAR_ROOM";
 
 // ACTION CREATORS
 
-export const setUser = user => ({
+export const setRoom = user => ({
   type: SET_ROOM,
   user
 });
 
-export const clearUser = () => ({
+export const clearRoom = () => ({
   type: CLEAR_ROOM
 });
 
