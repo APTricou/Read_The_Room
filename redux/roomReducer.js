@@ -17,7 +17,7 @@ export const clearRoom = () => ({
 // THUNK CREATORS
 
 // INITIAL STATE
-const initialState = "";
+const initialState = {};
 // REDUCER
 
 export const roomReducer = (state = initialState, action) => {

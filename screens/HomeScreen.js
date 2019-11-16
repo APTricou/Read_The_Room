@@ -13,7 +13,9 @@ import {
   Right,
   Body,
   Icon,
-  Text
+  Text,
+  List,
+  ListItem
 } from "native-base";
 import { db } from "../firebase/index";
 import { AuthSession } from "expo";
@@ -23,6 +25,7 @@ import { spotifyCredentials } from "../secrets";
 import { encode as btoa } from "base-64";
 import { setUser } from "../redux/userReducer";
 import SpotifyWebAPI from "spotify-web-api-js";
+import { setRoom } from "../redux/roomReducer";
 
 export default function HomeScreen() {
   // const testPlaylistRef = db.collection("playlists").doc("test-playlist");
@@ -161,17 +164,66 @@ export default function HomeScreen() {
     }
   };
 
-  const getUserPlaylists = async () => {
+  const getUserReadTheRoomPlaylist = async () => {
     const sp = await getValidSPObj();
     const { id: userId } = await sp.getMe();
-    const { items: playlists } = await sp.getUserPlaylists(userId, {
-      limit: 50
-    });
-    return playlists;
+    const { items: playlists } = await sp.getUserPlaylists(userId);
+    console.log("userId", userId);
+    const readTheRoomPlaylist = playlists.find(
+      playlist => playlist.name === "ReadTheRoom"
+    );
+    console.log("ReadTheRoom URI : ", readTheRoomPlaylist.uri);
+    return readTheRoomPlaylist;
   };
 
-  console.log("USER OBJECT ON STATE:", user);
-  console.log("PLAYLIST OBJECT ON STATE:", playlist);
+  // maybe an input later
+  const roomName = "Antanas Party";
+
+  const createRoom = async roomName => {
+    const sp = await getValidSPObj();
+    const { id: userId } = await sp.getMe();
+    // create instance of room on firebase
+    const hostRoomRef = await db
+      .collection("rooms")
+      .add({ name: roomName, users: [userId] });
+
+    // get readtheRoom playlist from current spotify user
+    let readTheRoomPlaylist = await getUserReadTheRoomPlaylist();
+    // if playlist doesnt exist for user, make it
+    if (!readTheRoomPlaylist) {
+      readTheRoomPlaylist = await sp.createPlaylist(userId, {
+        name: "ReadTheRoom",
+        private: true,
+        collaborative: true
+      });
+    }
+    // If playlist isnt collaborative, make it so
+    if (!readTheRoomPlaylist.collaborative) {
+      await sp.changePlaylistDetails(readTheRoomPlaylist.id, {
+        private: true,
+        collaborative: true
+      });
+    }
+    // add playlist and song data for read The Room playlist to firebase, selectively
+    const songs = await sp.getPlaylistTracks(readTheRoomPlaylist.id);
+    const reducedSongs = songs.items.map(song => ({
+      artists: song.track.artists.map(artist => ({
+        name: artist.name,
+        id: artist.id
+      })),
+      trackId: song.track.id,
+      songName: song.track.name
+    }));
+    console.log("number of songs on ReadTheRoom playlist", reducedSongs.length);
+
+    await hostRoomRef.update({ songs: reducedSongs });
+    const response = await hostRoomRef.get();
+    dispatch(setRoom(response.data()));
+  };
+
+  // console.log("USER OBJECT ON STATE:", user);
+  // console.log("PLAYLIST OBJECT ON STATE:", playlist);
+  console.log("hostRoom", room);
 
   return (
     <Container>
@@ -187,24 +239,41 @@ export default function HomeScreen() {
         <Right />
       </Header>
       <Content>
-        <Button style={{ margin: 5 }} onPress={getTokens}>
+        {user.access_token ? null : (
+          <Button style={{ margin: 5 }} onPress={getTokens}>
+            <Text>Log In with Spotify</Text>
+          </Button>
+        )}
+        <Button style={{ margin: 5 }} onPress={getUserReadTheRoomPlaylist}>
           <Text>
-            {user.access_token
-              ? `You are logged in through Spotify`
-              : "Log In with Spotify"}
+            {room.name ? `you are connected to ${room.name}` : `Join a Room`}
           </Text>
         </Button>
-        <Button style={{ margin: 5 }}>
-          <Text>
-            {room.code ? `you are connected to ${room.code}` : `Join a Room`}
-          </Text>
-        </Button>
-        <Button style={{ margin: 5 }}>
-          <Text>Host a Room</Text>
+        <Button style={{ margin: 5 }} onPress={() => createRoom(roomName)}>
+          <Text>{room.name ? `Stop Hosting` : "Host a Room"}</Text>
         </Button>
         <Button style={{ margin: 5 }}>
           <Text>Edit your Sharelist</Text>
         </Button>
+        {room.songs ? (
+          <List>
+            <ListItem key='Songs in Playlist' itemHeader first>
+              <Text>ALL SONGS</Text>
+            </ListItem>
+            {room.songs
+              ? room.songs.map((song, index) => (
+                  <ListItem key={index}>
+                    <Text>
+                      {song.songName} -{" "}
+                      {song.artists.reduce((string, artist) => {
+                        return string + artist.name;
+                      }, "")}
+                    </Text>
+                  </ListItem>
+                ))
+              : null}
+          </List>
+        ) : null}
       </Content>
       <Footer>
         <FooterTab>
@@ -217,8 +286,8 @@ export default function HomeScreen() {
             </Text>
             <Text>
               You are{" "}
-              {room.code
-                ? `you are connected to ${room.code}`
+              {room.name
+                ? `connected to "${room.name}"`
                 : `currently not in a room`}
             </Text>
           </Button>
