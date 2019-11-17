@@ -8,6 +8,7 @@ import store from "./store";
 import { Provider } from "react-redux";
 import { AuthSession } from "expo";
 require("./spotifyIntegration/index");
+import { Root } from "native-base";
 
 import AppNavigator from "./navigation/AppNavigator";
 
@@ -25,10 +26,12 @@ export default function App(props) {
   } else {
     return (
       <Provider store={store}>
-        <View style={styles.container}>
-          {Platform.OS === "ios" && <StatusBar barStyle='default' />}
-          <AppNavigator />
-        </View>
+        <Root>
+          <View style={styles.container}>
+            {Platform.OS === "ios" && <StatusBar barStyle='default' />}
+            <AppNavigator />
+          </View>
+        </Root>
       </Provider>
     );
   }

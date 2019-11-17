@@ -1,5 +1,5 @@
 import * as WebBrowser from "expo-web-browser";
-import React, { useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import {
   Container,
@@ -14,8 +14,9 @@ import {
   Body,
   Icon,
   Text,
-  List,
-  ListItem
+  Input,
+  Item,
+  Form
 } from "native-base";
 import { db } from "../firebase/index";
 import { AuthSession } from "expo";
@@ -25,9 +26,10 @@ import { spotifyCredentials } from "../secrets";
 import { encode as btoa } from "base-64";
 import { setUser } from "../redux/userReducer";
 import SpotifyWebAPI from "spotify-web-api-js";
-import { setRoom } from "../redux/roomReducer";
+import { setRoom, clearRoom } from "../redux/roomReducer";
+import { Alert } from "react-native";
 
-export default function HomeScreen() {
+export default function HomeScreen({ navigation }) {
   // const testPlaylistRef = db.collection("playlists").doc("test-playlist");
   const playlist = useSelector(state => state.playlist);
   const dispatch = useDispatch();
@@ -164,49 +166,40 @@ export default function HomeScreen() {
     }
   };
 
-  const getUserReadTheRoomPlaylist = async () => {
+  const getUserReadTheRoomPlaylist = async roomName => {
     const sp = await getValidSPObj();
     const { id: userId } = await sp.getMe();
     const { items: playlists } = await sp.getUserPlaylists(userId);
-    console.log("userId", userId);
     const readTheRoomPlaylist = playlists.find(
-      playlist => playlist.name === "ReadTheRoom"
+      playlist => playlist.name === roomName
     );
-    console.log("ReadTheRoom URI : ", readTheRoomPlaylist.uri);
     return readTheRoomPlaylist;
   };
 
-  // maybe an input later
-  const roomName = "Antanas Party";
-
-  const createRoom = async roomName => {
+  const createRoom = async (roomName, num = 0) => {
     const sp = await getValidSPObj();
     const { id: userId } = await sp.getMe();
-    // create instance of room on firebase
-    const hostRoomRef = await db
-      .collection("rooms")
-      .add({ name: roomName, users: [userId] });
-
     // get readtheRoom playlist from current spotify user
     let readTheRoomPlaylist = await getUserReadTheRoomPlaylist();
     // if playlist doesnt exist for user, make it
     if (!readTheRoomPlaylist) {
       readTheRoomPlaylist = await sp.createPlaylist(userId, {
-        name: "ReadTheRoom",
-        private: true,
-        collaborative: true
+        name: roomName,
+        public: false,
+        collaborative: true,
+        description: "Read the Room Collaborative Generated playlist"
       });
     }
     // If playlist isnt collaborative, make it so
     if (!readTheRoomPlaylist.collaborative) {
       await sp.changePlaylistDetails(readTheRoomPlaylist.id, {
-        private: true,
+        public: false,
         collaborative: true
       });
     }
     // add playlist and song data for read The Room playlist to firebase, selectively
-    const songs = await sp.getPlaylistTracks(readTheRoomPlaylist.id);
-    const reducedSongs = songs.items.map(song => ({
+    const { items: songs } = await sp.getPlaylistTracks(readTheRoomPlaylist.id);
+    const reducedSongs = songs.map(song => ({
       artists: song.track.artists.map(artist => ({
         name: artist.name,
         id: artist.id
@@ -214,66 +207,172 @@ export default function HomeScreen() {
       trackId: song.track.id,
       songName: song.track.name
     }));
-    console.log("number of songs on ReadTheRoom playlist", reducedSongs.length);
 
-    await hostRoomRef.update({ songs: reducedSongs });
-    const response = await hostRoomRef.get();
-    dispatch(setRoom(response.data()));
+    // create instance of room on firebase
+    const hostRoom = await db
+      .collection("rooms")
+      .doc(roomName)
+      .get();
+    if (!hostRoom.exists) {
+      await db
+        .collection("rooms")
+        .doc(roomName)
+        .set({
+          name: roomName,
+          host: userId,
+          playlistID: readTheRoomPlaylist.id,
+          users: [userId],
+          songs: reducedSongs
+        });
+      dispatch(
+        setRoom({
+          name: roomName,
+          host: userId,
+          playlistID: readTheRoomPlaylist.id,
+          users: [userId],
+          songs: reducedSongs
+        })
+      );
+    } else {
+      const hostRoomData = hostRoom.data();
+      if (hostRoomData.host === userId) {
+        dispatch(setRoom(hostRoomData));
+      } else {
+        Alert.alert(
+          "Room Conflict",
+          "That Room already exists, creating a new name",
+          [{ text: "OK", onPress: () => console.log("OK Pressed") }]
+        );
+        num++;
+        createRoom(roomName + String(num), num);
+      }
+    }
   };
 
-  // console.log("USER OBJECT ON STATE:", user);
-  // console.log("PLAYLIST OBJECT ON STATE:", playlist);
-  console.log("hostRoom", room);
+  const joinRoom = async roomName => {
+    const sp = await getValidSPObj();
+    const { id: userId } = await sp.getMe();
+    // find room on firebase
+    const hostRoomRef = db.collection("rooms").doc(roomName);
+    const hostRoom = await hostRoomRef.get();
+    if (!hostRoom.exists) {
+      Alert.alert("Error", "Room Does not exist");
+    } else {
+      const users = hostRoom.data().users;
+      if (!users.includes(userId)) {
+        users.push(userId);
+        await hostRoomRef.update({ users: users });
+      }
+      dispatch(setRoom({ ...hostRoom.data(), users: users }));
+    }
+  };
+  const leaveRoom = async roomName => {
+    const sp = await getValidSPObj();
+    const { id: userId } = await sp.getMe();
+    const hostRoomRef = db.collection("rooms").doc(roomName);
+    const hostRoom = await hostRoomRef.get();
+    const usersWithoutYou = hostRoom
+      .data()
+      .users.filter(user => user !== userId);
+    hostRoomRef.update({ users: usersWithoutYou });
+    dispatch(clearRoom());
+  };
+
+  // firebase hook to update room reducer goes here
+
+  const [input, setInput] = useState("");
 
   return (
     <Container>
       <Header>
-        <Left>
-          <Button transparent>
-            <Icon name='menu' />
-          </Button>
-        </Left>
         <Body>
           <Title>Read The Room</Title>
         </Body>
-        <Right />
       </Header>
       <Content>
-        {user.access_token ? null : (
-          <Button style={{ margin: 5 }} onPress={getTokens}>
+        {user.access_token ? (
+          <Container
+            style={{
+              justifyContent: "center"
+            }}
+          >
+            {room.name ? (
+              //if in a room diplay header stating current Room
+              <Content>
+                <Item>
+                  <Text>You are connected to {room.name}</Text>
+                </Item>
+                <Item>
+                  <Text>There are {room.users.length} users in this room</Text>
+                </Item>
+                {room.users.map((user, index) => (
+                  <Item key={index}>
+                    <Text>{user}</Text>
+                  </Item>
+                ))}
+                <Button
+                  style={{ margin: 5 }}
+                  onPress={() => {
+                    if (!room.name) {
+                      joinRoom(input);
+                    } else {
+                      leaveRoom(room.name);
+                    }
+                    navigation.navigate("Room");
+                  }}
+                >
+                  <Text>
+                    {room.name ? `Leave ${room.name}` : `Join a Room`}
+                  </Text>
+                </Button>
+              </Content>
+            ) : (
+              // if not in a room, display input and button
+              <Container style={{ justifyContent: "center" }}>
+                <Item rounded>
+                  <Input
+                    value={input}
+                    placeholder='Enter a room name'
+                    style={{ width: 75 }}
+                    onChangeText={text => setInput(text)}
+                  />
+                </Item>
+                <Button
+                  style={{ margin: 5 }}
+                  onPress={() => {
+                    if (!room.name) {
+                      joinRoom(input);
+                    } else {
+                      leaveRoom(room.name);
+                    }
+                    navigation.navigate("Room");
+                  }}
+                >
+                  <Text>
+                    {room.name ? `Leave ${room.name}` : `Join a Room`}
+                  </Text>
+                </Button>
+                <Button
+                  style={{ margin: 5 }}
+                  onPress={() => {
+                    if (!room.name) {
+                      createRoom(input);
+                    } else {
+                      leaveRoom(room.name);
+                    }
+                    navigation.navigate("Room");
+                  }}
+                >
+                  <Text>{room.name ? `Stop Hosting` : "Host a Room"}</Text>
+                </Button>
+              </Container>
+            )}
+          </Container>
+        ) : (
+          <Button style={{ margin: 30 }} onPress={getTokens}>
             <Text>Log In with Spotify</Text>
           </Button>
         )}
-        <Button style={{ margin: 5 }} onPress={getUserReadTheRoomPlaylist}>
-          <Text>
-            {room.name ? `you are connected to ${room.name}` : `Join a Room`}
-          </Text>
-        </Button>
-        <Button style={{ margin: 5 }} onPress={() => createRoom(roomName)}>
-          <Text>{room.name ? `Stop Hosting` : "Host a Room"}</Text>
-        </Button>
-        <Button style={{ margin: 5 }}>
-          <Text>Edit your Sharelist</Text>
-        </Button>
-        {room.songs ? (
-          <List>
-            <ListItem key='Songs in Playlist' itemHeader first>
-              <Text>ALL SONGS</Text>
-            </ListItem>
-            {room.songs
-              ? room.songs.map((song, index) => (
-                  <ListItem key={index}>
-                    <Text>
-                      {song.songName} -{" "}
-                      {song.artists.reduce((string, artist) => {
-                        return string + artist.name;
-                      }, "")}
-                    </Text>
-                  </ListItem>
-                ))
-              : null}
-          </List>
-        ) : null}
       </Content>
       <Footer>
         <FooterTab>
