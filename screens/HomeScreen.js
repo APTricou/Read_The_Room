@@ -20,8 +20,6 @@ import {
 } from "native-base";
 import { db } from "../firebase/index";
 import { AuthSession } from "expo";
-// AuthSession.startAsync();
-// console.log(AuthSession.getRedirectUrl());
 import { spotifyCredentials } from "../secrets";
 import { encode as btoa } from "base-64";
 import { setUser } from "../redux/userReducer";
@@ -30,7 +28,6 @@ import { setRoom, clearRoom } from "../redux/roomReducer";
 import { Alert } from "react-native";
 
 export default function HomeScreen({ navigation }) {
-  // const testPlaylistRef = db.collection("playlists").doc("test-playlist");
   const playlist = useSelector(state => state.playlist);
   const dispatch = useDispatch();
   const connected = true;
@@ -180,7 +177,7 @@ export default function HomeScreen({ navigation }) {
     const sp = await getValidSPObj();
     const { id: userId } = await sp.getMe();
     // get readtheRoom playlist from current spotify user
-    let readTheRoomPlaylist = await getUserReadTheRoomPlaylist();
+    let readTheRoomPlaylist = await getUserReadTheRoomPlaylist(roomName);
     // if playlist doesnt exist for user, make it
     if (!readTheRoomPlaylist) {
       readTheRoomPlaylist = await sp.createPlaylist(userId, {
@@ -331,7 +328,7 @@ export default function HomeScreen({ navigation }) {
               <Container style={{ justifyContent: "center" }}>
                 <Item rounded>
                   <Input
-                    value={input}
+                    value={`${input}`}
                     placeholder='Enter a room name'
                     style={{ width: 75 }}
                     onChangeText={text => setInput(text)}

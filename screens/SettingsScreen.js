@@ -11,10 +11,6 @@ import {
 } from "native-base";
 
 export default function SettingsScreen() {
-  /**
-   * Go ahead and delete ExpoConfigView and replace it with your content;
-   * we just wanted to give you a quick view of your config.
-   */
   return (
     <Container>
       <Header>
@@ -42,5 +38,5 @@ export default function SettingsScreen() {
 }
 
 SettingsScreen.navigationOptions = {
-  title: "app.json"
+  title: "Details"
 };
